@@ -131,6 +131,6 @@ if st.button("🐖🐖🐖 Bắt đầu Crawl"):
             st.download_button(
                 label="📥 Tải file Excel Final Link",
                 data=buffer,
-                file_name=f"{username}_final_links.xlsx",
+                file_name=f"{username}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
