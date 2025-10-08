@@ -3,14 +3,11 @@ import pandas as pd
 import requests
 import re
 import time
-import concurrent.futures
 from io import BytesIO
 
-st.set_page_config(page_title="Pearltrees Crawler + Filter (Fixed)", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Pearltrees Crawl (Pattern Links)", page_icon="🌿", layout="centered")
 
-# --- API constants ---
-TREE_SIBLING_API = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
-PRELOAD_API = "https://www.pearltrees.com/s/readerapi/preloadPearlReaderInfo"
+API_URL = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
 
 HEADERS = {
     "User-Agent": (
@@ -22,9 +19,8 @@ HEADERS = {
     "Origin": "https://www.pearltrees.com",
 }
 
-# ---------- Utility functions ----------
 def extract_pearl_id(url: str):
-    """Tách pearlId từ URL item..."""
+    """Tách pearlId từ URL kiểu .../item123456"""
     m = re.search(r"item(\d+)", url)
     if m:
         return int(m.group(1))
@@ -34,7 +30,7 @@ def extract_pearl_id(url: str):
 def get_related_pearl_ids(pearl_id: int):
     """Lấy danh sách pearl con / anh em"""
     try:
-        r = requests.get(TREE_SIBLING_API, params={"pearlId": pearl_id}, headers=HEADERS, timeout=10)
+        r = requests.get(API_URL, params={"pearlId": pearl_id}, headers=HEADERS, timeout=10)
         if r.status_code != 200:
             return []
         data = r.json()
@@ -53,38 +49,7 @@ def get_related_pearl_ids(pearl_id: int):
     except Exception:
         return []
 
-def check_valid_pearl(username, pearl_id, timeout=8):
-    """Kiểm tra 1 pearlId có browserUrl hợp lệ (tự động lấy userId thật)."""
-    try:
-        params = {"userId": 0, "pearlId": int(pearl_id)}
-        headers = HEADERS.copy()
-        headers["Referer"] = f"https://www.pearltrees.com/{username}"
-        r = requests.get(PRELOAD_API, params=params, headers=headers, timeout=timeout)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-
-        # Lấy userId thật (nếu có)
-        real_uid = data.get("userId") or data.get("pearl", {}).get("ownerUserId")
-        if real_uid and str(real_uid).isdigit():
-            r2 = requests.get(PRELOAD_API, params={"userId": real_uid, "pearlId": pearl_id}, headers=headers, timeout=timeout)
-            if r2.status_code == 200:
-                data = r2.json()
-
-        url = data.get("browserUrl")
-        title = data.get("title") or data.get("pearl", {}).get("title")
-
-        if url and str(pearl_id) in url:
-            return {
-                "pearlId": pearl_id,
-                "title": title,
-                "Link": f"https://www.pearltrees.com/{username}/item{pearl_id}",
-            }
-        return None
-    except Exception:
-        return None
-
-def crawl_tree(seed_id: int, limit=500, delay=0.3):
+def crawl_tree(seed_id: int, limit=1000, delay=0.3):
     """Duyệt toàn bộ cây từ seed_id"""
     visited, to_visit = set(), [seed_id]
     results = []
@@ -105,14 +70,16 @@ def crawl_tree(seed_id: int, limit=500, delay=0.3):
         time.sleep(delay)
     return sorted(results)
 
-# ---------- Streamlit App ----------
-st.title("🌿 Pearltrees — Crawl + Lọc Link Hợp Lệ (Tự động userId)")
+# ---------- Streamlit UI ----------
+st.title("🌿 Pearltrees — Crawl toàn bộ link (Pattern Mode)")
 st.markdown("""
-Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`),
-app sẽ:
-1. Crawl toàn bộ **pearlId** liên quan,
-2. Kiểm tra song song từng ID, tự động lấy **userId thật** khi cần,
-3. Xuất file Excel chứa link hoạt động thật, **sắp xếp tăng dần theo ID**.
+Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`).
+
+App sẽ:
+1. Crawl toàn bộ `pearlId` từ cây,
+2. Tạo link theo mẫu:  
+   `https://www.pearltrees.com/<username>/item<pearlId>`,
+3. Xuất ra file Excel sắp xếp tăng dần.
 """)
 
 col1, col2 = st.columns(2)
@@ -122,9 +89,8 @@ with col2:
     start_url = st.text_input("🌐 Hoặc dán 1 URL item:", "")
 
 max_items = st.number_input("Giới hạn số item tối đa để crawl", min_value=10, max_value=5000, value=500)
-threads = st.slider("Số luồng kiểm tra song song", min_value=2, max_value=20, value=8)
 
-if st.button("🚀 Bắt đầu Crawl + Lọc"):
+if st.button("🚀 Bắt đầu Crawl"):
     if not username and not start_url:
         st.warning("⚠️ Cần nhập username hoặc URL item.")
     else:
@@ -137,42 +103,24 @@ if st.button("🚀 Bắt đầu Crawl + Lọc"):
             st.info(f"🔍 Seed pearlId = {seed_id}")
             with st.spinner("Đang crawl danh sách ID..."):
                 pearl_ids = crawl_tree(seed_id, limit=max_items)
-                st.success(f"✅ Crawl xong {len(pearl_ids)} ID. Bắt đầu lọc...")
+                st.success(f"✅ Crawl xong {len(pearl_ids)} ID. Tạo link...")
 
-            progress = st.progress(0)
-            valid_links = []
-            total = len(pearl_ids)
-            start_time = time.time()
+            # Tạo link từ pattern
+            links = [
+                {"pearlId": pid, "Link": f"https://www.pearltrees.com/{username}/item{pid}"}
+                for pid in pearl_ids
+            ]
 
-            def process_pid(pid):
-                return check_valid_pearl(username, pid)
+            df = pd.DataFrame(links).drop_duplicates().sort_values(by="pearlId")
+            st.dataframe(df)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-                futures = {executor.submit(process_pid, pid): pid for pid in pearl_ids}
-                for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                    res = future.result()
-                    if res:
-                        valid_links.append(res)
-                    progress.progress(min((i + 1) / total, 1.0))
-
-            elapsed = time.time() - start_time
-            st.success(f"✅ Hoàn tất! {len(valid_links)} link hợp lệ trong {elapsed:.1f}s.")
-
-            if valid_links:
-                df = pd.DataFrame(valid_links)
-                df = df.drop_duplicates(subset=["pearlId"])
-                df = df.sort_values(by="pearlId", ascending=True)
-
-                st.dataframe(df)
-
-                buffer = BytesIO()
-                df.to_excel(buffer, index=False, engine="openpyxl")
-                buffer.seek(0)
-                st.download_button(
-                    "📥 Tải file Excel link hợp lệ (đã sắp xếp)",
-                    data=buffer,
-                    file_name=f"{username}_valid_links_sorted.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            else:
-                st.warning("Không tìm thấy link hợp lệ nào.")
+            # Xuất Excel
+            buffer = BytesIO()
+            df.to_excel(buffer, index=False, engine="openpyxl")
+            buffer.seek(0)
+            st.download_button(
+                label="📥 Tải file Excel link (pattern)",
+                data=buffer,
+                file_name=f"{username}_pattern_links.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
