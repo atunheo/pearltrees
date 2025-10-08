@@ -5,7 +5,7 @@ import re
 import time
 from io import BytesIO
 
-st.set_page_config(page_title="heo ú ", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Pearltrees Crawl (Final Links)", page_icon="🌿", layout="centered")
 
 API_URL = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
 
@@ -70,21 +70,36 @@ def crawl_tree(seed_id: int, limit=1000, delay=0.3):
         time.sleep(delay)
     return sorted(results)
 
+def get_final_url(url):
+    """Theo dõi redirect để lấy URL cuối cùng"""
+    try:
+        r = requests.head(url, allow_redirects=True, timeout=10)
+        return r.url
+    except Exception:
+        return url
+
 # ---------- Streamlit UI ----------
-st.title("🌿 bé heo dễ thương ")
+st.title("🌿 Pearltrees — Crawl & Xuất Final Link duy nhất")
 st.markdown("""
-hello 
+Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`).
+
+App sẽ:
+1. Crawl toàn bộ `pearlId` từ cây,
+2. Tạo link `https://www.pearltrees.com/<username>/item<id>`,
+3. Theo redirect để lấy URL thật,
+4. Xuất **1 cột duy nhất** chứa `Final Link`.
 """)
 
 col1, col2 = st.columns(2)
 with col1:
     username = st.text_input("👤 Tên tài khoản (vd: heiliaounu):", "")
 with col2:
-    start_url = st.text_input("🌐 đường link bài viết :", "")
+    start_url = st.text_input("🌐 Hoặc dán 1 URL item:", "")
 
-max_items = st.number_input("số lượng bài viết muốn crawl ", min_value=10, max_value=5000, value=500)
+max_items = st.number_input("Giới hạn số item tối đa để crawl", min_value=10, max_value=5000, value=500)
+delay = st.slider("Độ trễ giữa các request (giây)", min_value=0.0, max_value=3.0, value=0.3, step=0.1)
 
-if st.button("🐖🐖🐖 Bắt đầu Crawl"):
+if st.button("🚀 Bắt đầu Crawl + Lấy Final Link"):
     if not username and not start_url:
         st.warning("⚠️ Cần nhập username hoặc URL item.")
     else:
@@ -96,25 +111,32 @@ if st.button("🐖🐖🐖 Bắt đầu Crawl"):
         else:
             st.info(f"🔍 Seed pearlId = {seed_id}")
             with st.spinner("Đang crawl danh sách ID..."):
-                pearl_ids = crawl_tree(seed_id, limit=max_items)
-                st.success(f"✅ Crawl xong {len(pearl_ids)} ID. Tạo link...")
+                pearl_ids = crawl_tree(seed_id, limit=max_items, delay=delay)
+                st.success(f"✅ Crawl xong {len(pearl_ids)} ID. Đang lấy Final Link...")
 
-            # Tạo link từ pattern
-            links = [
-                {"pearlId": pid, "Link": f"https://www.pearltrees.com/{username}/item{pid}"}
-                for pid in pearl_ids
-            ]
+            progress = st.progress(0)
+            final_links = []
+            total = len(pearl_ids)
 
-            df = pd.DataFrame(links).drop_duplicates().sort_values(by="pearlId")
+            for i, pid in enumerate(pearl_ids):
+                raw_link = f"https://www.pearltrees.com/{username}/item{pid}"
+                final_url = get_final_url(raw_link)
+                final_links.append(final_url)
+                progress.progress(min((i + 1) / total, 1.0))
+                time.sleep(delay)
+
+            df = pd.DataFrame(final_links, columns=["Final Link"])
+            df = df.drop_duplicates().sort_values(by="Final Link").reset_index(drop=True)
+
+            st.success(f"✅ Hoàn tất! Thu được {len(df)} final links.")
             st.dataframe(df)
 
-            # Xuất Excel
             buffer = BytesIO()
             df.to_excel(buffer, index=False, engine="openpyxl")
             buffer.seek(0)
             st.download_button(
-                label="📥 Tải file Excel link (pattern)",
+                label="📥 Tải file Excel Final Link",
                 data=buffer,
-                file_name=f"{username}_pattern_links.xlsx",
+                file_name=f"{username}_final_links.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
