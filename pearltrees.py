@@ -2,15 +2,24 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.set_page_config(page_title="Pearltrees Pearl ID Crawler", page_icon="🌿", layout="centered")
-
-TREE_API = "https://www.pearltrees.com/s/treeandpearlsapi/getTreeAndPearls"
+st.set_page_config(page_title="Pearltrees Pearl ID Finder", page_icon="🌿", layout="centered")
 
 def get_all_pearls(username):
-    """Lấy tất cả pearlId từ tài khoản Pearltrees"""
+    """Lấy tất cả Pearl ID từ tài khoản Pearltrees (mô phỏng trình duyệt thật)."""
     try:
-        url = f"{TREE_API}?ownerUserName={username}"
-        r = requests.get(url, timeout=15)
+        url = f"https://www.pearltrees.com/s/treeandpearlsapi/getTreeAndPearls?ownerUserName={username}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://www.pearltrees.com/{username}",
+            "Origin": "https://www.pearltrees.com",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        r = requests.get(url, headers=headers, timeout=20)
         if r.status_code != 200:
             st.error(f"❌ Không thể truy cập tài khoản {username} (mã lỗi {r.status_code})")
             return []
@@ -35,9 +44,12 @@ def get_all_pearls(username):
 
 # --- Giao diện Streamlit ---
 st.title("🌿 Pearltrees Pearl ID Finder")
-st.markdown("Nhập **tên tài khoản Pearltrees**, công cụ sẽ trả về toàn bộ **Pearl ID** thuộc tài khoản đó.")
+st.markdown(
+    "Nhập **tên tài khoản Pearltrees**, công cụ sẽ trả về toàn bộ **Pearl ID** "
+    "có thể truy cập công khai."
+)
 
-username = st.text_input("👤 Nhập tên tài khoản (vd: heiliaounu):", "")
+username = st.text_input("👤 Nhập tên tài khoản (ví dụ: heiliaounu):")
 
 if st.button("🚀 Lấy danh sách Pearl ID"):
     if not username.strip():
@@ -50,7 +62,6 @@ if st.button("🚀 Lấy danh sách Pearl ID"):
                 st.success(f"✅ Tìm thấy {len(df)} Pearl ID trong tài khoản {username}.")
                 st.dataframe(df)
 
-                # Tải Excel
                 excel_bytes = df.to_excel(index=False, engine="openpyxl")
                 st.download_button(
                     label="📥 Tải file Excel",
@@ -59,4 +70,4 @@ if st.button("🚀 Lấy danh sách Pearl ID"):
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             else:
-                st.info("Không tìm thấy Pearl ID nào.")
+                st.info("Không tìm thấy Pearl ID nào hoặc tài khoản bị hạn chế quyền truy cập.")
