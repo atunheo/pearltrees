@@ -148,4 +148,84 @@ def crawl_from_seed(seed_pearl_id: int, max_items: int = 500, delay: float = 0.5
             continue
         visited.add(current)
 
-        status_text.info(f"Đang_
+        status_text.info(f"Đang xử lý pearlId: {current}  — đã thu: {len(results)} / giới hạn {max_items}")
+        info = get_pearl_detail_by_pearlid(current)
+        browser_url = info.get("browserUrl") if info else None
+        user_id = info.get("userId") if info else None
+
+        results.append({"pearlId": current, "browserUrl": browser_url, "userId": user_id})
+        # lấy related ids
+        related = get_related_pearl_ids(current)
+        for r in related:
+            if r not in visited and r not in to_visit:
+                to_visit.append(r)
+
+        steps += 1
+        progress.progress(min(steps / max_items, 1.0))
+        time.sleep(delay)
+
+    status_text.success(f"Hoàn tất: thu được {len(results)} item(s).")
+    return results
+
+# ---------- Streamlit UI ----------
+st.title("🌿 Pearltrees — Lấy Pearl ID & URLs")
+st.markdown(
+    "Bạn có thể nhập **Tên tài khoản** hoặc **dán trực tiếp 1 URL item** (ví dụ: "
+    "`https://www.pearltrees.com/heiliaounu/item751860259`).\n\n"
+    "- Nếu nhập username, app sẽ cố gắng tìm 1 seed `pearlId` từ trang public.\n"
+    "- Sau đó app duyệt đệ quy (BFS) qua API `getPearlParentTreeAndSiblingPearls` để thu toàn bộ `pearlId` và `browserUrl`."
+)
+
+col1, col2 = st.columns(2)
+with col1:
+    user_input = st.text_input("Tên tài khoản (ví dụ: heiliaounu)", value="")
+with col2:
+    url_input = st.text_input("Hoặc dán 1 URL item (ví dụ chứa 'item123...')", value="")
+
+max_items = st.number_input("Giới hạn số items tối đa (để tránh quá tải)", min_value=10, max_value=5000, value=600, step=10)
+delay = st.slider("Delay giữa các request (giây)", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
+
+if st.button("🚀 Bắt đầu thu thập"):
+    seed_ids = []
+    seed_pearl = None
+
+    # 1) nếu user dán URL item thì ưu tiên lấy pearlId từ đó
+    if url_input and "pearltrees.com" in url_input:
+        pid = extract_pearl_id_from_url(url_input)
+        if pid:
+            seed_ids = [pid]
+        else:
+            st.warning("Không tìm thấy 'item<ID>' trong URL. Vui lòng dán đúng URL item.")
+    # 2) nếu chỉ có username -> cố gắng quét HTML để tìm item ids
+    elif user_input:
+        found = try_find_seed_pearl_from_username(user_input)
+        if found:
+            seed_ids = found  # dùng các ids tìm được (thứ tự tăng dần)
+        else:
+            st.warning("Không tìm thấy pearlId trong trang user công khai. Vui lòng dán 1 URL item cụ thể.")
+    else:
+        st.warning("Vui lòng nhập username hoặc dán 1 URL item.")
+    
+    # Nếu có seed, tiến hành crawl (ưu tiên id đầu tiên)
+    if seed_ids:
+        seed = seed_ids[0]
+        st.info(f"Sử dụng seed pearlId = {seed}  (tổng seed tìm thấy: {len(seed_ids)})")
+        with st.spinner("⏳ Đang crawl..."):
+            results = crawl_from_seed(seed, max_items=int(max_items), delay=float(delay))
+            if results:
+                df = pd.DataFrame(results)
+                st.success(f"✅ Thu thập xong — tổng {len(df)} items.")
+                st.dataframe(df)
+
+                # Xuất Excel (BytesIO)
+                buffer = BytesIO()
+                df.to_excel(buffer, index=False, engine="openpyxl")
+                buffer.seek(0)
+                st.download_button(
+                    "📥 Tải file Excel",
+                    data=buffer,
+                    file_name="pearltrees_links.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("Không thu thập được item nào. Có thể tài khoản private hoặc API bị hạn chế.")
