@@ -1,95 +1,62 @@
 import streamlit as st
 import requests
 import pandas as pd
-import time
 
-st.set_page_config(page_title="Pearltrees Link Crawler", page_icon="🌐", layout="centered")
+st.set_page_config(page_title="Pearltrees Pearl ID Crawler", page_icon="🌿", layout="centered")
 
-TREE_API = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
-DETAIL_API = "https://www.pearltrees.com/s/readerapi/preloadPearlReaderInfo"
+TREE_API = "https://www.pearltrees.com/s/treeandpearlsapi/getTreeAndPearls"
 
-def get_related_pearl_ids(pearl_id):
-    """Lấy danh sách pearl con hoặc cùng cấp."""
+def get_all_pearls(username):
+    """Lấy tất cả pearlId từ tài khoản Pearltrees"""
     try:
-        r = requests.get(TREE_API, params={"pearlId": pearl_id}, timeout=10)
-        r.raise_for_status()
+        url = f"{TREE_API}?ownerUserName={username}"
+        r = requests.get(url, timeout=15)
+        if r.status_code != 200:
+            st.error(f"❌ Không thể truy cập tài khoản {username} (mã lỗi {r.status_code})")
+            return []
         data = r.json()
-        ids = set()
-        for k, v in data.items():
-            if isinstance(v, list):
-                for item in v:
-                    if isinstance(item, dict) and "id" in item:
-                        ids.add(item["id"])
-        return list(ids)
     except Exception as e:
-        st.error(f"❌ Lỗi lấy danh sách child: {e}")
+        st.error(f"❌ Lỗi khi tải dữ liệu: {e}")
         return []
 
-def get_pearl_url(user_id, pearl_id):
-    """Lấy URL bài viết từ API chi tiết."""
-    try:
-        r = requests.get(DETAIL_API, params={"userId": user_id, "pearlId": pearl_id}, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        return data.get("browserUrl")
-    except Exception as e:
-        st.error(f"❌ Lỗi lấy URL cho pearl {pearl_id}: {e}")
-        return None
+    pearls = []
+    def extract_ids(obj):
+        if isinstance(obj, dict):
+            if "id" in obj:
+                pearls.append(obj["id"])
+            for v in obj.values():
+                extract_ids(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                extract_ids(item)
 
-def crawl_pearltrees(user_id, root_pearl_id, delay=1):
-    """Thu thập toàn bộ link bài viết trong cây Pearltrees."""
-    visited = set()
-    to_visit = [root_pearl_id]
-    results = []
-
-    progress = st.progress(0)
-    step = 0
-
-    while to_visit:
-        current_id = to_visit.pop(0)
-        if current_id in visited:
-            continue
-        visited.add(current_id)
-
-        url = get_pearl_url(user_id, current_id)
-        if url:
-            results.append({"pearlId": current_id, "URL": url})
-
-        children = get_related_pearl_ids(current_id)
-        for c in children:
-            if c not in visited:
-                to_visit.append(c)
-
-        step += 1
-        progress.progress(min(step / 50, 1.0))  # thanh tiến trình
-        time.sleep(delay)
-
-    return pd.DataFrame(results)
+    extract_ids(data)
+    return sorted(set(pearls))
 
 # --- Giao diện Streamlit ---
-st.title("🌐 Pearltrees Link Crawler")
-st.markdown("Công cụ tự động thu thập toàn bộ **URL bài viết** từ Pearltrees bằng API nội bộ.")
+st.title("🌿 Pearltrees Pearl ID Finder")
+st.markdown("Nhập **tên tài khoản Pearltrees**, công cụ sẽ trả về toàn bộ **Pearl ID** thuộc tài khoản đó.")
 
-user_id = st.text_input("🔹 Nhập User ID", value="18995598")
-root_pearl_id = st.text_input("🔹 Nhập Pearl ID gốc", value="751860259")
+username = st.text_input("👤 Nhập tên tài khoản (vd: heiliaounu):", "")
 
-if st.button("🚀 Bắt đầu thu thập"):
-    if not user_id or not root_pearl_id:
-        st.warning("⚠️ Vui lòng nhập cả User ID và Pearl ID.")
+if st.button("🚀 Lấy danh sách Pearl ID"):
+    if not username.strip():
+        st.warning("⚠️ Vui lòng nhập tên tài khoản hợp lệ.")
     else:
-        with st.spinner("⏳ Đang thu thập dữ liệu..."):
-            df = crawl_pearltrees(int(user_id), int(root_pearl_id))
-            if not df.empty:
-                st.success(f"✅ Thu thập {len(df)} liên kết thành công!")
+        with st.spinner("🔎 Đang lấy dữ liệu từ Pearltrees..."):
+            pearls = get_all_pearls(username.strip())
+            if pearls:
+                df = pd.DataFrame(pearls, columns=["Pearl ID"])
+                st.success(f"✅ Tìm thấy {len(df)} Pearl ID trong tài khoản {username}.")
                 st.dataframe(df)
 
-                # Cho phép tải file Excel
+                # Tải Excel
                 excel_bytes = df.to_excel(index=False, engine="openpyxl")
                 st.download_button(
                     label="📥 Tải file Excel",
                     data=excel_bytes,
-                    file_name="pearltrees_links.xlsx",
+                    file_name=f"{username}_pearls.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             else:
-                st.info("Không tìm thấy liên kết nào.")
+                st.info("Không tìm thấy Pearl ID nào.")
