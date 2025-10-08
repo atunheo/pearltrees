@@ -6,7 +6,7 @@ import time
 import concurrent.futures
 from io import BytesIO
 
-st.set_page_config(page_title="Pearltrees Crawler + Filter", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="Pearltrees Crawler + Filter (Fixed)", page_icon="🌿", layout="centered")
 
 # --- API constants ---
 TREE_SIBLING_API = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
@@ -54,7 +54,7 @@ def get_related_pearl_ids(pearl_id: int):
         return []
 
 def check_valid_pearl(username, pearl_id, timeout=8):
-    """Kiểm tra 1 pearlId có browserUrl hợp lệ"""
+    """Kiểm tra 1 pearlId có browserUrl hợp lệ (tự động lấy userId thật)."""
     try:
         params = {"userId": 0, "pearlId": int(pearl_id)}
         headers = HEADERS.copy()
@@ -63,10 +63,23 @@ def check_valid_pearl(username, pearl_id, timeout=8):
         if r.status_code != 200:
             return None
         data = r.json()
+
+        # Lấy userId thật (nếu có)
+        real_uid = data.get("userId") or data.get("pearl", {}).get("ownerUserId")
+        if real_uid and str(real_uid).isdigit():
+            r2 = requests.get(PRELOAD_API, params={"userId": real_uid, "pearlId": pearl_id}, headers=headers, timeout=timeout)
+            if r2.status_code == 200:
+                data = r2.json()
+
         url = data.get("browserUrl")
         title = data.get("title") or data.get("pearl", {}).get("title")
+
         if url and str(pearl_id) in url:
-            return {"pearlId": pearl_id, "title": title, "Link": f"https://www.pearltrees.com/{username}/item{pearl_id}"}
+            return {
+                "pearlId": pearl_id,
+                "title": title,
+                "Link": f"https://www.pearltrees.com/{username}/item{pearl_id}",
+            }
         return None
     except Exception:
         return None
@@ -93,13 +106,13 @@ def crawl_tree(seed_id: int, limit=500, delay=0.3):
     return sorted(results)
 
 # ---------- Streamlit App ----------
-st.title("🌿 Pearltrees — Crawl & Lọc Link Hợp Lệ (Có Sắp Xếp)")
+st.title("🌿 Pearltrees — Crawl + Lọc Link Hợp Lệ (Tự động userId)")
 st.markdown("""
 Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`),
 app sẽ:
 1. Crawl toàn bộ **pearlId** liên quan,
-2. Kiểm tra song song từng ID để tìm **link hoạt động thật**,
-3. Xuất file Excel chứa link hợp lệ **đã sắp xếp tăng dần**.
+2. Kiểm tra song song từng ID, tự động lấy **userId thật** khi cần,
+3. Xuất file Excel chứa link hoạt động thật, **sắp xếp tăng dần theo ID**.
 """)
 
 col1, col2 = st.columns(2)
