@@ -1,89 +1,95 @@
-# streamlit_app.py
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
-import openpyxl
-from openpyxl import Workbook
-import os
+import time
 
-OUTPUT_FILE = "pearltrees_urls.xlsx"
+st.set_page_config(page_title="Pearltrees Link Crawler", page_icon="🌐", layout="centered")
 
-def fetch_pearltrees_links(username):
-    """Lấy danh sách URL bài viết từ trang Pearltrees"""
-    base_url = f"https://www.pearltrees.com/{username}"
-    response = requests.get(base_url)
-    if response.status_code != 200:
-        st.error("❌ Không thể truy cập trang Pearltrees. Vui lòng kiểm tra tên người dùng.")
+TREE_API = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
+DETAIL_API = "https://www.pearltrees.com/s/readerapi/preloadPearlReaderInfo"
+
+def get_related_pearl_ids(pearl_id):
+    """Lấy danh sách pearl con hoặc cùng cấp."""
+    try:
+        r = requests.get(TREE_API, params={"pearlId": pearl_id}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        ids = set()
+        for k, v in data.items():
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, dict) and "id" in item:
+                        ids.add(item["id"])
+        return list(ids)
+    except Exception as e:
+        st.error(f"❌ Lỗi lấy danh sách child: {e}")
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    links = []
+def get_pearl_url(user_id, pearl_id):
+    """Lấy URL bài viết từ API chi tiết."""
+    try:
+        r = requests.get(DETAIL_API, params={"userId": user_id, "pearlId": pearl_id}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return data.get("browserUrl")
+    except Exception as e:
+        st.error(f"❌ Lỗi lấy URL cho pearl {pearl_id}: {e}")
+        return None
 
-    # Pearltrees hiển thị liên kết trong thẻ <a> — ta lọc URL phù hợp
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if href.startswith("/"):
-            href = f"https://www.pearltrees.com{href}"
-        if "n=" in href or "itemId" in href or "id=" in href:
-            links.append(href)
+def crawl_pearltrees(user_id, root_pearl_id, delay=1):
+    """Thu thập toàn bộ link bài viết trong cây Pearltrees."""
+    visited = set()
+    to_visit = [root_pearl_id]
+    results = []
 
-    return list(set(links))  # loại trùng
+    progress = st.progress(0)
+    step = 0
 
-def save_urls_to_excel(urls, filename=OUTPUT_FILE):
-    """Lưu danh sách URL vào file Excel"""
-    if not urls:
-        return
+    while to_visit:
+        current_id = to_visit.pop(0)
+        if current_id in visited:
+            continue
+        visited.add(current_id)
 
-    if not os.path.exists(filename):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "URLs"
-        ws.append(["Index", "URL"])
-    else:
-        wb = openpyxl.load_workbook(filename)
-        ws = wb.active
+        url = get_pearl_url(user_id, current_id)
+        if url:
+            results.append({"pearlId": current_id, "URL": url})
 
-    existing = {ws.cell(row=i, column=2).value for i in range(2, ws.max_row + 1)}
-    new_urls = [u for u in urls if u not in existing]
+        children = get_related_pearl_ids(current_id)
+        for c in children:
+            if c not in visited:
+                to_visit.append(c)
 
-    for url in new_urls:
-        ws.append([ws.max_row, url])
+        step += 1
+        progress.progress(min(step / 50, 1.0))  # thanh tiến trình
+        time.sleep(delay)
 
-    wb.save(filename)
-    st.success(f"✅ Đã lưu {len(new_urls)} URL mới vào file Excel.")
-
-def load_urls(filename=OUTPUT_FILE):
-    """Đọc danh sách URL"""
-    if os.path.exists(filename):
-        return pd.read_excel(filename)
-    return pd.DataFrame(columns=["Index", "URL"])
+    return pd.DataFrame(results)
 
 # --- Giao diện Streamlit ---
-st.title("🌐 Trình thu thập URL từ Pearltrees")
-username = st.text_input("Nhập tên người dùng Pearltrees:", placeholder="vd: heiliaounu")
+st.title("🌐 Pearltrees Link Crawler")
+st.markdown("Công cụ tự động thu thập toàn bộ **URL bài viết** từ Pearltrees bằng API nội bộ.")
 
-if st.button("🔍 Thu thập link bài viết"):
-    if not username.strip():
-        st.warning("⚠️ Vui lòng nhập tên người dùng.")
+user_id = st.text_input("🔹 Nhập User ID", value="18995598")
+root_pearl_id = st.text_input("🔹 Nhập Pearl ID gốc", value="751860259")
+
+if st.button("🚀 Bắt đầu thu thập"):
+    if not user_id or not root_pearl_id:
+        st.warning("⚠️ Vui lòng nhập cả User ID và Pearl ID.")
     else:
-        with st.spinner("Đang thu thập dữ liệu..."):
-            urls = fetch_pearltrees_links(username.strip())
-            if urls:
-                st.success(f"✅ Tìm thấy {len(urls)} URL.")
-                save_urls_to_excel(urls)
-                st.dataframe(pd.DataFrame(urls, columns=["URL"]))
+        with st.spinner("⏳ Đang thu thập dữ liệu..."):
+            df = crawl_pearltrees(int(user_id), int(root_pearl_id))
+            if not df.empty:
+                st.success(f"✅ Thu thập {len(df)} liên kết thành công!")
+                st.dataframe(df)
+
+                # Cho phép tải file Excel
+                excel_bytes = df.to_excel(index=False, engine="openpyxl")
+                st.download_button(
+                    label="📥 Tải file Excel",
+                    data=excel_bytes,
+                    file_name="pearltrees_links.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
             else:
-                st.info("Không tìm thấy liên kết nào trên trang này.")
-
-st.subheader("📄 Danh sách URL đã lưu")
-urls_df = load_urls()
-st.dataframe(urls_df)
-
-if os.path.exists(OUTPUT_FILE):
-    with open(OUTPUT_FILE, "rb") as f:
-        st.download_button(
-            label="📥 Tải xuống file Excel",
-            data=f.read(),
-            file_name=OUTPUT_FILE,
-        )
+                st.info("Không tìm thấy liên kết nào.")
