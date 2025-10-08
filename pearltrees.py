@@ -5,7 +5,7 @@ import re
 import time
 from io import BytesIO
 
-st.set_page_config(page_title="Pearltrees Crawl (Pattern Links)", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="heo ú ", page_icon="🌿", layout="centered")
 
 API_URL = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
 
@@ -71,26 +71,20 @@ def crawl_tree(seed_id: int, limit=1000, delay=0.3):
     return sorted(results)
 
 # ---------- Streamlit UI ----------
-st.title("🌿 Pearltrees — Crawl toàn bộ link (Pattern Mode)")
+st.title("🌿 bé heo dễ thương ")
 st.markdown("""
-Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`).
-
-App sẽ:
-1. Crawl toàn bộ `pearlId` từ cây,
-2. Tạo link theo mẫu:  
-   `https://www.pearltrees.com/<username>/item<pearlId>`,
-3. Xuất ra file Excel sắp xếp tăng dần.
+hello 
 """)
 
 col1, col2 = st.columns(2)
 with col1:
     username = st.text_input("👤 Tên tài khoản (vd: heiliaounu):", "")
 with col2:
-    start_url = st.text_input("🌐 Hoặc dán 1 URL item:", "")
+    start_url = st.text_input("🌐 đường link bài viết :", "")
 
-max_items = st.number_input("Giới hạn số item tối đa để crawl", min_value=10, max_value=5000, value=500)
+max_items = st.number_input("số lượng bài viết muốn crawl ", min_value=10, max_value=5000, value=500)
 
-if st.button("🚀 Bắt đầu Crawl"):
+if st.button("🐖🐖🐖 Bắt đầu Crawl"):
     if not username and not start_url:
         st.warning("⚠️ Cần nhập username hoặc URL item.")
     else:
