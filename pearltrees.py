@@ -5,7 +5,7 @@ import re
 import time
 from io import BytesIO
 
-st.set_page_config(page_title="Pearltrees Crawl (Final Links)", page_icon="🌿", layout="centered")
+st.set_page_config(page_title="heo ú", page_icon="🌿", layout="centered")
 
 API_URL = "https://www.pearltrees.com/s/treeandpearlsapi/getPearlParentTreeAndSiblingPearls"
 
@@ -79,27 +79,21 @@ def get_final_url(url):
         return url
 
 # ---------- Streamlit UI ----------
-st.title("🌿 Pearltrees — Crawl & Xuất Final Link duy nhất")
+st.title("🌿 heo con dễ thương ")
 st.markdown("""
-Nhập **tên tài khoản** hoặc **URL item** (ví dụ `https://www.pearltrees.com/heiliaounu/item751860259`).
-
-App sẽ:
-1. Crawl toàn bộ `pearlId` từ cây,
-2. Tạo link `https://www.pearltrees.com/<username>/item<id>`,
-3. Theo redirect để lấy URL thật,
-4. Xuất **1 cột duy nhất** chứa `Final Link`.
+hello world nè 
 """)
 
 col1, col2 = st.columns(2)
 with col1:
     username = st.text_input("👤 Tên tài khoản (vd: heiliaounu):", "")
 with col2:
-    start_url = st.text_input("🌐 Hoặc dán 1 URL item:", "")
+    start_url = st.text_input("🌐 link bài viết :", "")
 
-max_items = st.number_input("Giới hạn số item tối đa để crawl", min_value=10, max_value=5000, value=500)
+max_items = st.number_input("số lượng bài viết  crawl", min_value=10, max_value=5000, value=500)
 delay = st.slider("Độ trễ giữa các request (giây)", min_value=0.0, max_value=3.0, value=0.3, step=0.1)
 
-if st.button("🚀 Bắt đầu Crawl + Lấy Final Link"):
+if st.button("🐖🐖🐖 Bắt đầu Crawl"):
     if not username and not start_url:
         st.warning("⚠️ Cần nhập username hoặc URL item.")
     else:
